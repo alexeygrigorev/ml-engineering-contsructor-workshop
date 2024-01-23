@@ -399,6 +399,8 @@ if __name__ == '__main__':
 
 ## Best practices
 
+Outline
+
 - Readme
 - Documentation
 - Logging
@@ -437,7 +439,7 @@ The order is arbitrary, you can follow any other order
 See a small example [here](01-train/README.md)
 
 
-Other examples: 
+Other examples:
 
 - https://github.com/Isaac-Ndirangu-Muturi-749/Kitchenware-Image-Classification-System-with-Keras-Deploying-and-Testing-with-AWS-Lambda
 - https://github.com/cyberholics/Malicious-URL-detector
@@ -699,13 +701,234 @@ It's a very useful tool for automation and creating shortcuts. We will talk abou
 
 # Day 2: Deployment
 
-Model --> Web service
+Deploying the trained ML model in a web service.
+
+Outcome: A deployable web service hosting the ML model.
 
 
 ## Serving with Flask
 
-- Flask 101
-- Building web services for ML models
+Outline:
+
+- Preparing the env
+- Basics of Flask
+- Serving a model with Flask
+
+### Preparing the environment
+
+Like yesterday, let's create a repo on github ("mle-workshop-day2-deploy") and create a codespace there (or use your local/other env)
+
+
+Prepare the environment
+
+- `pip install pipenv` to install pipenv
+- `pipenv install` to create the env
+- `pipenv install flask scikit-learn==1.2.2`
+
+
+Folder structure
+
+```
+mkdir models
+mkdir duration_prediction_serve
+mkdir tests
+mkdir integration_tests
+touch README.md
+touch Makefile
+touch Dockerfile
+```
+
+### Flask 101
+
+Flask is a web server. Let's create the simplest flask app:
+
+```python
+from flask import Flask
+
+app = Flask('ping')
+
+@app.route('/ping', methods=['GET'])
+def ping():
+    return 'PONG'
+
+if __name__ == '__main__':
+   app.run(debug=True, host='0.0.0.0', port=9696)
+```
+
+Run it:
+
+```bash
+pipenv run python ping.py
+```
+
+Open in the browser: http://localhost:9696/ping
+
+Or query with curl:
+
+```bash
+curl http://localhost:9696/ping
+```
+
+### Serving the model
+
+First, let's download the model:
+
+```bash
+wget https://github.com/alexeygrigorev/ml-engineering-contsructor-workshop/raw/main/01-train/models/model-2022-01.bin -P models
+```
+
+Now let's load it and process a request (`serve.py`):
+
+```python
+import pickle
+
+with open('./models/model-2022-01.bin', 'rb') as f_in:
+    model = pickle.load(f_in)
+
+trip = {
+    'PULocationID': '43',
+    'DOLocationID': '238',
+    'trip_distance': 1.16
+}
+
+prediction = model.predict(trip)
+print(prediction[0])
+```
+
+We can now combine the two scripts into one:
+
+```python
+import pickle
+
+from flask import Flask, request, jsonify
+
+with open('./models/model-2022-01.bin', 'rb') as f_in:
+    model = pickle.load(f_in)
+
+
+def prepare_features(ride):
+    features = {}
+    features['PULocationID'] = str(ride['PULocationID'])
+    features['DOLocationID'] = str(ride['DOLocationID'])
+    features['trip_distance'] = ride['trip_distance']
+    return features
+
+
+def predict(features):
+    preds = model.predict(features)
+    return float(preds[0])
+
+
+app = Flask('duration-prediction')
+
+
+@app.route('/predict', methods=['POST'])
+def predict_endpoint():
+    ride = request.get_json()
+
+    features = prepare_features(ride)
+    pred = predict(features)
+
+    result = {
+        'preduction': {
+            'duration': pred,
+        },
+    }
+
+    return jsonify(result)
+
+
+if __name__ == "__main__":
+    app.run(debug=True, host='0.0.0.0', port=9696)
+```
+
+Run it:
+
+```bath
+pipenv run python duration_prediction_serve/serve.py
+```
+
+We can add it to the makefile:
+
+```makefile
+run:
+    pipenv run python duration_prediction_serve/serve.py
+```
+
+And do `make run`
+
+Now let's test it:
+
+```bash
+REQUEST='{
+    "PULocationID": 100,
+    "DOLocationID": 102,
+    "trip_distance": 30
+}'
+
+URL="http://localhost:9696/predict"
+
+curl -X POST \
+    -d "${REQUEST}" \
+    -H "Content-Type: application/json" \
+    ${URL}
+```
+
+We can write this to `predict-test.py` (note - this is not a python "test", just a script for sending a request and printing it):
+
+```python
+import requests
+
+url = 'http://localhost:9696/predict'
+
+trip = {
+    "PULocationID": 100,
+    "DOLocationID": 102,
+    "trip_distance": 30
+}
+
+response = requests.post(url, json=trip).json()
+print(response)
+```
+
+Install requests:
+
+```bash
+pipenv install --dev requests
+```
+
+Run it:
+
+```bash
+pipenv run python predict-test.py
+```
+
+
+### Configuring with env variables
+
+We have one problem: the model path is hardcoded. How can we make it more flexible?
+
+With environment variables
+
+```bash
+export MODEL_PATH="./models/model-2022-01.bin"
+
+
+```
+
+Loading it:
+
+```python
+import os
+import pickle
+
+from flask import Flask, request, jsonify
+
+with open(', 'rb') as f_in:
+    model = pickle.load(f_in)
+```
+
+Adding version too
 
 ## Dockerization
 
