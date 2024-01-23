@@ -110,7 +110,7 @@ We need a separate folder for:
 So we will create the following folders:
 
 ```bash
-mkdir src
+mkdir duration_prediction
 mkdir tests
 mkdir notebooks
 mkdir data
@@ -402,6 +402,7 @@ if __name__ == '__main__':
 - Readme
 - Documentation
 - Logging
+- Modularization
 - Testing
 - Makefile
 
@@ -450,14 +451,245 @@ Note that these are examples from students. They are not ideal, but should give 
 
 ### Documentation
 
+Why do we need docstrings:
+
+* We work in a team, not alone, so we need to have good description of how functions/classes works
+* Docstrings integrate with documentation tools to automatically generate documentation
+* Especially important if we work on a library
+
+Tip: use ChatGPT for that. Example prompt: "create a docstring for the following function"
+
+```python
+def read_dataframe(filename: str) -> pd.DataFrame:
+    """
+    Read a Parquet file into a DataFrame and preprocess the data.
+
+    This function reads a Parquet file, computes the duration of each taxi trip,
+    filters the trips based on duration criteria, and converts certain categorical
+    columns to string type.
+
+    Parameters:
+    filename (str): The path to the Parquet file.
+
+    Returns:
+    pd.DataFrame: The processed DataFrame.
+    """
+    # Function implementation...
+    pass
+
+
+def train(train_month: datetime, val_month: datetime, model_output_path: str) -> None:
+    """
+    Train a linear regression model for predicting taxi trip durations.
+
+    This function trains a model using data from specified months, evaluates it,
+    and saves the trained model to a file. It reads data, preprocesses it,
+    fits a linear regression model within a pipeline, and evaluates the model
+    using RMSE. The trained model is then saved to the specified path.
+
+    Parameters:
+    train_month (datetime): The month for training data.
+    val_month (datetime): The month for validation data.
+    model_output_path (str): The file path to save the trained model.
+
+    Returns:
+    None
+    """
+    pass
+```
 
 ### Logging
+
+We often include useful information with `print` statements - it helps us understand what's happening in the code and find bugs.
+
+
+Why can't we just use print statements?
+
+- Not flexible: can't turn them on and off as we need based on their importance (all of them are equally important)
+- Limited information: they don't provide enough information like timestamps or source
+- No structure: often no consistent format, which makes it harder to analyze logs later
+
+Logs allow:
+
+* Categorizing Issues: differentiate messages by severity levels (info, debug, error)
+* Timestamping Events: provide exact times for each event, crucial for troubleshooting
+* Controlling Output: toggle or filter log messages based on the environment (development, production) or other criteria
+
+
+Let's use logging in our script:
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+def read_dataframe(filename: str) -> pd.DataFrame:
+    """
+    Docstring here...
+    """
+    logger.info(f"Reading data from {filename}")
+
+    try:
+        df = pd.read_parquet(filename)
+        # Rest of your code...
+        logger.debug(f"Dataframe shape: {df.shape}")
+        return df
+    except Exception as e:
+        logger.error(f"Error reading {filename}: {e}")
+        raise
+
+def train(train_month: datetime, val_month: datetime, model_output_path: str) -> None:
+    """
+    Docstring here...
+    """
+    logger.info(f"Training model for {train_month} and validating for {val_month}")
+    try:
+        # ...
+        logger.debug(f"URL for training data: {url_train}")
+        logger.debug(f"URL for validation data: {url_val}")
+
+        # Your code to train the model...
+        logger.info(f'RMSE: {rmse}')
+        # ...
+        logger.info(f"Model trained successfully. Saving model to {model_output_path}")
+        # Save model...
+    except Exception as e:
+        logger.error(f"Error in training: {e}")
+        raise
+```
+
+Configure logging
+
+
+```python
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+```
+We can set the level to `DEBUG` to also see the debug messages
+
+
+### Modularization
+
+We have all the code in one file. Let's split it into two:
+
+- `main.py` for running the whole thing
+- `train.py` for logic for training
+
+Also, we need to create an empty `__init__.py` file, otherwise `duration_prediciton` won't be recognized as a python module
+
+Why modules?
+
+* Easier to maintain and update small files
+* Reusable - can use the module in some other place 
+* Useful for testing - we will see later
+
+
+Now run it like that:
+
+```bash
+TRAIN="2022-01"
+VAL="2022-02"
+
+pipenv run python \
+    -m duration_prediction.main \
+    --train-month="${TRAIN}" \
+    --val-month="${VAL}" \
+    --model-output-path="./models/model-${TRAIN}.bin"
+```
 
 
 ### Testing
 
+Why testing:
+
+* Error Detection: find bugs and errors before deployment
+* Quality Assurance: make sure that the behavior is expected (follows specifications - if applicable)
+* Refactoring: allows us making changes to the code without worrying that we accidentally break something
+* Documentation: it's also a form of documentation, showing how the code is intended to be used
+
+We will spend more time talking about testing tomorrow, but for now we can create a simple test.
+
+Let's create a file `test_train.py` in `tests`:
+
+```python
+import os
+import unittest
+from datetime import datetime
+
+from duration_prediction.train import train
+
+
+class TestMLPipeline(unittest.TestCase):
+
+    def test_train_function(self):
+        # Test if train function works and saves the model file
+        
+        train_month = datetime(2022, 1, 1)
+        val_month = datetime(2022, 2, 1)
+        model_output_path = 'test_model.bin'
+        
+        train(train_month, val_month, model_output_path)
+
+        # Check if model file is created
+        self.assertTrue(os.path.exists(model_output_path))
+
+        # Remove test model file after test
+        os.remove(model_output_path)
+
+
+if __name__ == '__main__':
+    unittest.main()
+```
+
+Run only one test:
+
+```bash
+pipenv run python -m unittest tests.test_train
+```
+
+Running all tests in `tests/`
+
+```bash
+pipenv run python -m unittest discover -s tests
+```
+
+Enabling tests in VS code
+
+* You can also run tests in VS Code
+* Install the Python extension for that
+* Select the right interpreter: Ctrl+Shift+P -> Python -> Select interpreter
+* Install pytest as a dev dependency `pipenv install --dev pytest`
+
 
 ### Makefile
+
+* To run the unit tests, we need to use a long command.
+* Instead, we can just do `make tests`
+
+```makefile
+tests:
+	pipenv run python -m unittest discover -s tests
+```
+
+You might get something like that:
+```bash
+$ make tests
+make: 'tests' is up to date.
+```
+
+Fix:
+```makefile
+.PHONY: tests
+tests: 
+	pipenv run python -m unittest discover -s tests
+```
+
+It's a very useful tool for automation and creating shortcuts. We will talk about it more on the next day
+
 
 
 ## Homework

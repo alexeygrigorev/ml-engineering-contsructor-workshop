@@ -21,7 +21,7 @@ pipenv install --dev
 
 The project is organized into several directories and files, each serving a specific purpose:
 
-- `src/`: the source code for the training pipeline and other Python scripts
+- `duration_prediction/`: the source code for the training pipeline and other Python scripts
 - `tests/`: test cases and test data
 - `notebooks/`: notebooks for experimentation and one-off analyses
 - `data/`: data files used for training and validating the models
@@ -32,28 +32,33 @@ The project is organized into several directories and files, each serving a spec
 
 ## Usage
 
-You need to be in the `src` folder
+You need to be in the `duration_prediction` folder
 
 ```bash
-cd src
+cd duration_prediction
 ```
 
 Running it:
 
 ```python
-
 TRAIN="2022-01"
 VAL="2022-02"
 
-pipenv run python train.py \
+pipenv run python \
+    -m duration_prediction.main \
     --train-month="${TRAIN}" \
     --validation-month="${VAL}" \
-    --model-output-path="../models/model-${TRAIN}.bin"
+    --model-output-path="./models/model-${TRAIN}.bin"
 ```
 
 Running tests:
 
 ```bash
-TODO
+pipenv run python -m unittest discover -s tests
 ```
- 
+
+Or
+
+```bash
+make tests
+```
