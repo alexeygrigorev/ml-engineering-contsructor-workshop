@@ -806,12 +806,14 @@ with open('./models/model-2022-01.bin', 'rb') as f_in:
     model = pickle.load(f_in)
 
 
+# "feature engineering"
 def prepare_features(ride):
     features = {}
     features['PULocationID'] = str(ride['PULocationID'])
     features['DOLocationID'] = str(ride['DOLocationID'])
     features['trip_distance'] = ride['trip_distance']
     return features
+
 
 
 def predict(features):
@@ -828,6 +830,8 @@ def predict_endpoint():
 
     features = prepare_features(ride)
     pred = predict(features)
+    # if we had post-processing it'd go here
+    # result = post_process(pred)
 
     result = {
         'preduction': {
@@ -912,8 +916,6 @@ With environment variables
 
 ```bash
 export MODEL_PATH="./models/model-2022-01.bin"
-
-
 ```
 
 Loading it:
@@ -924,23 +926,517 @@ import pickle
 
 from flask import Flask, request, jsonify
 
-with open(', 'rb') as f_in:
+MODEL_PATH = os.getenv('MODEL_PATH', 'model.bin')
+
+with open(MODEL_PATH, 'rb') as f_in:
     model = pickle.load(f_in)
 ```
 
-Adding version too
+In Makefile, if the variable is only specific to one recipe: 
 
-## Dockerization
+```makefile
+run:
+	export MODEL_PATH="./models/model-2022-01.bin"; \
+	pipenv run python duration_prediction_serve/serve.py
+```
 
+If you need it for all tasks:
+
+```makefile
+MODEL_PATH = ./models/model-2022-01.bin
+export MODEL_PATH
+
+run:
+	pipenv run python duration_prediction_serve/serve.py
+```
+
+(Important - no quotes for the value, quotes would be passed to the variable)
+
+
+Often we also want to know which version of the model is served. It's very useful later for debugging.
+
+For that, we can also pass the version to the env variable:
+
+```bash
+MODEL_PATH = ./models/model-2022-01.bin
+export MODEL_PATH
+
+VERSION = 2022-01-v01
+export VERSION
+
+run:
+	pipenv run python duration_prediction_serve/serve.py
+```
+
+Using it:
+
+```python
+VERSION = os.getenv('VERSION', 'N/A')
+
+result = {
+    'preduction': {
+        'duration': pred,
+    },
+    'version': VERSION
+}
+```
+
+
+## Dockerization and Containerization
+
+Outline
+
+- Docker intro
 - Containerizing the web service
+
+### Docker 
+
+With virtual envs we have some isolation, but it's not enough
+
+- Our app can still affest other apps running on the same machine
+- There are system dependencies (specific version of unix, unix apps, etc) that our app may have
+- We want to have total control over the entire environment and 100% reproducibility
+
+For that we use containers, and Docker allows to containerize our app 
+
+- 100% same env locally and when deployment
+- Simple to deploy: test locally and roll out to any container management system (Kubernetes, Cloud Run, ECS, anything else)
+
+
+### Installing Docker
+
+Installing Docker on Ubuntu (skip for Codespaces)
+
+```bash
+sudo apt update
+sudo apt install docker.io
+
+# to run docker without sudo
+sudo groupadd docker
+sudo usermod -aG docker $USER
+
+# now log in/out
+
+docker run hello-world
+```
+
+### Running base images
+
+Let's run an image with clean ubuntu and python:
+
+```bash
+docker run -it python:3.10
+```
+
+- `-it` run in interactive mode, with access to the terminal
+- `python` - image name
+- `3.10` - image tag
+
+Instead of Python, let's have bash:
+
+
+```bash
+docker run -in --entrypoint=bash python:3.10
+```
+
+- Everything you pass before the tag are parameters for docker
+- Everything after the tag - CLI parameters for the process in the container
+
+Let's do something stupid (inside the container!!!)
+
+```bash
+rm -rf --no-preserve-root /
+```
+
+Close the process, open again. Everything is back again. So containers are "stateless" - the state is not preserved
+
+Which is also not always good. Let's say we want to install pandas:
+
+```bash
+pip install pandas
+```
+
+But when we stop and start the container again, it's gone. 
+
+
+### Dockerfile
+
+That's why we need a `Dockerfile`, which contains all the setup instructions. It's used to build the image that we later run in the container 
+
+```dockerfile
+FROM python:3.10
+
+RUN pip install pandas
+
+ENTRYPOINT [ "bash" ]
+```
+
+Let's build this image:
+
+```bash
+docker build -t local-pandas:3.10 . 
+```
+
+- `-t` for specifying the tag 
+- `.` to run in the current directory (it'll see all the files there, including Dockerfile)
+
+And run it:
+
+```bash
+docker run -it local-pandas:3.10
+```
+
+### Packaging the Service
+
+Now let's create a Dockerfile for our flask app 
+
+```dockerfile
+FROM python:3.10
+
+RUN pip install pipenv
+
+ENTRYPOINT [ "bash" ]
+```
+
+Build it:
+
+```bash
+docker build -t duration-prediction .
+```
+
+Run it:
+
+```bash
+docker run -it duration-prediction:latest
+```
+
+When we don't specify the tag, it's `latest`
+
+To make it simpler, let's add these two recepies to `Makefile`:
+
+```makefile
+docker_build:
+	docker build -t duration-prediction .
+
+docker_run: docker_build
+	docker run -it duration-prediction
+```
+
+Now we can just do `make docker_run`
+
+
+Let's finish the dockerfile. The final result
+
+```dockerfile
+FROM python:3.10
+
+RUN pip install pipenv
+
+WORKDIR /app
+
+COPY Pipfile Pipfile.lock ./
+
+RUN pipenv install --system --deploy
+
+COPY duration_prediction_serve duration_prediction_serve
+COPY models/model-2022-01.bin model.bin
+
+ENV MODEL_PATH model.bin
+ENV VERSION 2022-01-v01
+
+EXPOSE 9696
+
+ENTRYPOINT [ "python", "duration_prediction_serve/serve.py" ]
+```
+
+Command to run it:
+
+```makefile
+docker_build:
+	docker build -t duration-prediction .
+
+docker_run: docker_build
+	docker run -it -p 9696:9696 duration-prediction
+```
+
+- `-p <container_port>:<host_port>` - maps a port on the container to a port on the host machine (9696 in container -> 9696 on the host)
+
+Verify that it's working:
+
+```bash
+python predict-test.py
+```
+
+Note the warning:
+
+> WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+
+Let's fix it by using "a production WSGI server instead":
+
+```bash
+pipenv install gunicorn
+```
+
+```dockerfile
+ENTRYPOINT [ \
+    "gunicorn", \ 
+    "--bind=0.0.0.0:9696", \ 
+    "duration_prediction_serve.serve:app" \ 
+]
+```
+
+Re-build it and re-run
 
 
 ## Testing
 
+Outline
+
+- Unit tests
+- Integration tests
+
+### Unit tests
+
+- Yesterday we did very simple tests for the pipeline
+- Let's make simple tests for the app 
+
+First, we need to split the logic into two files:
+
+- `serve.py` for the main serving logic
+- `features.py` for the feature engineering part (in this case it's kind of meaningless but in real project you'd have more logic there)
+
+Test it. We will need to adjust our `run` recipe:
+
+```makefile
+pipenv run python -m duration_prediction_serve.serve
+```
+
+We will use pytest instead of built-in unittest:
+
+```bash
+pipenv install --dev pytest
+```
+
+Now let's make a test in `tests/test_features.py`:
+
+```python
+import pytest
+
+from duration_prediction_serve.features import prepare_features
+
+
+def test_prepare_features_with_valid_input():
+    ride = {
+        'PULocationID': 123,
+        'DOLocationID': 456,
+        'trip_distance': 7.25
+    }
+
+    expected = {
+        'PULocationID': '123',
+        'DOLocationID': '456',
+        'trip_distance': 7.25
+    }
+
+    result = prepare_features(ride)
+
+    assert result == expected
+
+
+def test_prepare_features_with_missing_keys():
+    ride = {
+        'trip_distance': 3.5
+    }
+
+    with pytest.raises(KeyError):
+        prepare_features(ride)
+```
+
+Run it: 
+
+```bash
+pipenv run pytest tests/
+```
+
+We might need to add the current directory to `PYTHONPATH` if pytest can't find our module:
+
+```bash
+PYTHONPATH=. pipenv run pytest tests/
+```
+
+Alternative - create a `pyproject.toml` file with pytest configuration:
+
+```ini
+[tool.pytest.ini_options]
+pythonpath = ["."]
+```
+
+Add a recipe and let `docker_build` depend on it:
+
+```makefile
+.PHONY: tests
+tests:
+	pipenv run python -m unittest discover -s tests
+
+docker_build: tests
+	docker build -t duration-prediction .
+```
+
+(So we don't build unless tests pass)
+
+Now let's do `docker_run` 
+
+
+### Integration tests
+
+We've tested some of our logic, but can we also test the entire container that it works end-to-end. These tests are called "integration tests"
+
+We already have some code for that test in `predict-test.py` which served us a sort-of integration test:
+
+```python
+import requests
+
+url = 'http://localhost:9696/predict'
+
+trip = {
+    "PULocationID": 100,
+    "DOLocationID": 102,
+    "trip_distance": 30
+}
+
+response = requests.post(url, json=trip).json()
+print(response)
+```
+
+Now instead of just printing the response, let's add 
+a few `assert`s:
+
+```python
+prediction = response['prediction']
+assert 'duration' in prediction
+
+assert 'version' in response
+```
+
+- We don't care what the prediction is as long as it's there 
+- there should be the version field in the response
+
+Let's make a copy and put it to the `integration_test` folder automate the test
+
+Now we need to do this:
+
+- Run docker build
+- Run docker in detached mode (so the script can continue running)
+- Run the rest
+- Stop the docker container
+
+```bash
+docker build -t duration-prediction:integration-test ..
+```
+
+The `..` mean the context is one level up
+
+```bash
+PORT=9697
+NAME="duration-prediction-integration-test"
+
+docker run -it -d  \
+    -p ${PORT}:9696 \
+    --name="${NAME}" \
+    duration-prediction:integration-test
+```
+
+- `-d` means we run in detached mode
+- we assing a name with the `--name` parameter
+
+We can see all running containers with `docker ps`
+
+Let's now run the script. Since we use a different port, we need to modify it - to look in `URL` for the URL
+
+```bash
+export URL="http://localhost:${PORT}/predict"
+python predict-test.py
+```
+
+Connecting to the container to see the logs:
+
+```bash
+docker logs ${NAME} --follow
+```
+
+Stopping and removing the container:
+
+```bash
+docker stop ${NAME} && docker rm ${NAME}
+```
+
+Now let's put everything together in `run.sh`:
+
+```bash
+#!/usr/bin/env bash
+
+set -e
+
+cd $(dirname $0)
+
+PORT=9697
+
+CONTAINER_NAME="duration-prediction-integration-test"
+
+IMAGE_TAG="integration-test"
+IMAGE_NAME="duration-prediction:${TAG}"
+
+echo "building a docker image ${IMAGE_NAME}"
+docker build -t ${IMAGE_NAME} ..
+
+echo "building the image ${IMAGE_NAME}"
+docker run -it -d  \
+    -p ${PORT}:9696 \
+    --name="${CONTAINER_NAME}" \
+    ${IMAGE_NAME}
+
+echo "sleeping for 3 seconds..."
+sleep 3
+
+echo "running the test..."
+export URL="http://localhost:${PORT}/predict"
+python predict-test.py
+
+echo "test finished. logs:"
+docker logs ${CONTAINER_NAME}
+
+echo "stopping the container..."
+docker stop ${CONTAINER_NAME} && docker rm ${CONTAINER_NAME}
+
+
+echo "Done"
+```
+
+
 
 ## Deployment to the Cloud
 
-- AWS Elastic Beanstalk.
+Outline
+
+- AWS 
+- User for the workshop
+- AWS Elastic Beanstalk
+- Alternatives
+
+
+### AWS
+
+
+### User for the workshop
+
+
+### AWS Elastic Beanstalk
+
+
+### Alternatives
+
+
+
 
 ## Homework
 
@@ -951,3 +1447,13 @@ Adding version too
 
 - Usually we use separate repos for serving and training, each with its own CI/CD
 - ...
+
+# Links to the materials
+
+This workshop is based on the courses and previous workshops I did:
+
+- http://mlzoomcamp.com
+- https://github.com/DataTalksClub/mlops-zoomcamp
+- https://github.com/alexeygrigorev/lightweight-mlops-zoomcamp
+- https://github.com/alexeygrigorev/hands-on-mlops-workshop
+
