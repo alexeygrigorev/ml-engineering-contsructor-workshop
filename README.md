@@ -26,6 +26,23 @@ Outcome: A deployable web service hosting the ML model.
 
 Notebook --> training pipeline
 
+* Environment setup
+  * Codespaces
+* Project structure
+* Virtual environments
+* Transforming a notebook into a script
+  * Refactoring the script
+  * Parametrizing the script
+* Best practices:
+  * Readme
+  * Documentation
+  * Logging
+  * Modularization
+  * Testing
+  * Makefile
+
+
+
 ## Problem
 
 Taxi trip duration prediction
@@ -100,11 +117,11 @@ Overview:
 
 We need a separate folder for:
 
-- Notebooks for keeping experimental notebooks and one-off reports 
-- Source code for the training pipeline
-- Folder for tests
-- Data (often use external data stores like s3/dvc - out of the scope)
-- Models (often use model registries like mlflow - out of the scope)
+- `notebooks`: notebooks for keeping experimental notebooks and one-off reports
+- `duration_prediction`: source code for the training pipeline (the name depends on your project)
+- `tests`: folder for tests
+- `data`: folder for data, but in practice we often use external data stores like s3/dvc (out of the scope)
+- `models`: folder for models, but in practice we often use model registries like mlflow (out of the scope)
 
 
 So we will create the following folders:
@@ -289,6 +306,7 @@ y_pred = pipeline.predict(val_dicts)
 
 And save it with pickle
 
+
 ### Converting the notebook into a script
 
 To convert the notebook to a python script, run
@@ -321,6 +339,8 @@ pipenv run python train.py \
     --validation-month=2022-02 \
     --model-output-path=../models/model-2022-01.bin
 ```
+
+There's a built-in module `argparse` that we can use for that:
 
 ```python
 import argparse
@@ -356,8 +376,8 @@ model_output_path = args.model_output_path
 run(train_date, val_date, model_save_path)
 ```
 
-Here we use argparse - a built-in python module. There are also packages like
-[click](https://click.palletsprojects.com/en/8.1.x/) that make it even simpler. 
+There are also packages like [click](https://click.palletsprojects.com/en/8.1.x/)
+that make it even simpler.
 
 First, install click:
 
@@ -713,6 +733,7 @@ Outline:
 - Preparing the env
 - Basics of Flask
 - Serving a model with Flask
+
 
 ### Preparing the environment
 
@@ -1408,10 +1429,13 @@ docker logs ${CONTAINER_NAME}
 echo "stopping the container..."
 docker stop ${CONTAINER_NAME} && docker rm ${CONTAINER_NAME}
 
-
 echo "Done"
 ```
 
+Note: a more complex (but more complete) script won't stop if
+`predict-test` fails, it'll still show the logs. You can
+google "saving error code to env variable in bash" and
+adjust the script.
 
 
 ## Deployment to the Cloud

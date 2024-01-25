@@ -32,12 +32,6 @@ The project is organized into several directories and files, each serving a spec
 
 ## Usage
 
-You need to be in the `duration_prediction` folder
-
-```bash
-cd duration_prediction
-```
-
 Running it:
 
 ```python
