@@ -717,6 +717,7 @@ It's a very useful tool for automation and creating shortcuts. We will talk abou
 ## Homework
 
 - Refactor your own code
+- You can use [this notebook](https://github.com/DataTalksClub/machine-learning-zoomcamp/blob/master/05-deployment/code/05-train-churn-model.ipynb) (this is the [data](https://raw.githubusercontent.com/alexeygrigorev/mlbookcamp-code/master/chapter-03-churn-prediction/WA_Fn-UseC_-Telco-Customer-Churn.csv) for the notebook)
 
 
 # Day 2: Deployment
@@ -1450,27 +1451,162 @@ Outline
 
 ### AWS
 
+Overview of the console and what AWS is. Create an account there if you haven't
 
 ### User for the workshop
 
+For the workshop, we will create a user with permissions that
+are only necessary for deployng to Elastic Beanstalk.
+
+We should
+avoid using keys with admin priviliges, because if the key
+is compromised, you can have problems. Note that the user
+we will create has VERY broad permissions too, so if it gets
+compromised, we have problems too, so handle with care.
+
+
+Creating a user and an access key
+
+- IAM -> Access management -> Users
+- Create user, e.g. "mle-workshop-day2", no need for "AWS Management Console"
+- Attach the "AdministratorAccess-AWSElasticBeanstalk" policy
+- Once created, open the user
+- Go to security credentials, click "create access key"
+- Use case: "Application running outside AWS" (doesn't matter much)
+- Description: "codespaces" or "laptop" or something else
+- Copy the key and the secret somewhere, we will use them
+- You can deativate the key after the workshop if you want (access key -> actions -> deativate)
+
+Now let's install AWS CLI:
+
+```bash
+pip install awscli
+```
+
+You can also install it as a dev dependency
+
+```bash
+pipenv install --dev awscli
+```
+
+Now configure the CLI and enter the key and the secret:
+
+```bash
+aws configure
+```
+
+Example:
+
+```
+AWS Access Key ID [None]: AKIA********
+AWS Secret Access Key [None]: /N8Qh******
+Default region name [None]: eu-west-1
+Default output format [None]: 
+```
+
+Verify that it works:
+
+```bash
+aws sts get-caller-identity
+```
+
+Response:
+
+```json
+{
+    "UserId": "AIDA********",
+    "Account": "387546586099",
+    "Arn": "arn:aws:iam::387546586099:user/mle-workshop-day2"
+}
+```
+
+Now the user is ready
 
 ### AWS Elastic Beanstalk
+
+First let's see EBS in console
+
+After that, install the CLI:
+
+```bash
+pipenv install --dev awsebcli
+```
+
+Now it should be available as `eb`
+
+Let's create an EBS project:
+
+```bash
+pipenv run eb init -p docker -r eu-west-1 duration-prediction
+```
+
+(replace the region with what you want)
+
+To run locally, open `.elasticbeanstalk/config.yaml` and replace
+
+```
+  default_platform: 'Docker running on 64bit Amazon Linux 2'
+  default_region: eu-west-1
+```
+
+Now run:
+
+```bash
+pipenv run eb local run --port 9696
+```
+
+And test it with `predict-test.py`:
+
+```bash
+export URL="http://localhost:9696/predict"
+pipenv run python integration_tests/predict-test.py
+```
+
+It's time to deploy it:
+
+```bash
+pipenv run eb create duration-prediction-env
+```
+
+Note the URL:
+
+```
+2024-01-25 20:54:13    INFO    Application available at duration-prediction-env.eba-3t2zuiva.eu-west-1.elasticbeanstalk.com.
+```
+
+ Let's replace it:
+
+```bash
+export URL="http://duration-prediction-env.eba-3t2zuiva.eu-west-1.elasticbeanstalk.com/predict"
+pipenv run python integration_tests/predict-test.py
+```
+
+It works!
+
+Now let's terminate the EB environment
+
+```bash
+pipenv run eb terminate duration-prediction-env
+```
 
 
 ### Alternatives
 
-
+* Kubernetes (see mlzoomcamp.com if you want to learn more)
+* ECS (AWS), Cloud Run (GCP)
+* Many others
 
 
 ## Homework
 
-- Serve your model
+- Serve the model you created yesterday
 
 
 # Notes
 
 - Usually we use separate repos for serving and training, each with its own CI/CD
 - ...
+
 
 # Links to the materials
 
