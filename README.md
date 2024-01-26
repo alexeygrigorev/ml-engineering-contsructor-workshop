@@ -724,6 +724,17 @@ It's a very useful tool for automation and creating shortcuts. We will talk abou
 
 Deploying the trained ML model in a web service.
 
+* Flask
+  * Flask 101
+  * Putting the model in Flask
+* Configuring via env variables
+* Docker
+  * Docker basics
+  * Dockerfile
+  * Putting the flask app in the container
+* Unit and integration tests
+* Deploying with AWS
+
 Outcome: A deployable web service hosting the ML model.
 
 
